@@ -59,30 +59,32 @@ with st.sidebar:
         bf = st.number_input("bf — Flange width (mm)", 0.0, 4000.0, 0.0, 10.0)
         hf = st.number_input("hf — Flange depth (mm)", 0.0, 500.0, 0.0, 10.0)
 
+    with st.expander("🌀 Transverse Steel (Stirrups)", expanded=True):
+        n_legs    = st.number_input("Stirrup legs", 2, 8, 2, 1)
+        stir_size = st.selectbox("Stirrup bar size", list(REBAR_SIZES.keys()), index=0)
+        s         = st.number_input("s — Spacing (mm)", 0.0, 600.0, 200.0, 10.0)
+        st.caption(f"→ Av = {n_legs*REBAR_AREA[stir_size]:.0f} mm²")
+
     with st.expander("🔩 Bottom Steel — Layer 1 (tension)", expanded=True):
         nb1   = st.number_input("Number of bars (Layer 1)", 1, 20, 4, 1)
         bar1  = st.selectbox("Bar size (Layer 1)", list(REBAR_SIZES.keys()), index=2)
-        d1    = st.number_input("d1 — centroid from top (mm)", 50.0, 3000.0, 540.0, 5.0)
-        st.caption(f"→ As1 = {nb1*REBAR_AREA[bar1]:.0f} mm²")
+        _dv_bar_preview = REBAR_SIZES[stir_size]
+        _d1_preview = h - cover - _dv_bar_preview/2 - REBAR_SIZES[bar1]/2
+        st.caption(f"→ As1 = {nb1*REBAR_AREA[bar1]:.0f} mm²  |  d1 = {_d1_preview:.0f} mm  (auto, Cl. 7.5)")
 
     with st.expander("🔩 Bottom Steel — Layer 2 (0 bars = none)"):
         nb2   = st.number_input("Number of bars (Layer 2)", 0, 20, 0, 1)
         bar2  = st.selectbox("Bar size (Layer 2)", list(REBAR_SIZES.keys()), index=2)
-        d2    = st.number_input("d2 — centroid from top (mm)", 50.0, 3000.0, 490.0, 5.0)
         if nb2 > 0:
-            st.caption(f"→ As2 = {nb2*REBAR_AREA[bar2]:.0f} mm²")
+            _gap_min_preview = max(1.4*max(REBAR_SIZES[bar1], REBAR_SIZES[bar2]), 30.0)
+            _d2_preview = _d1_preview - REBAR_SIZES[bar1]/2 - _gap_min_preview - REBAR_SIZES[bar2]/2
+            st.caption(f"→ As2 = {nb2*REBAR_AREA[bar2]:.0f} mm²  |  d2 = {_d2_preview:.0f} mm  (auto, Cl. 7.5)")
 
     with st.expander("🔩 Top Steel — Compression (0 bars = none)"):
         nb_top  = st.number_input("Number of bars (Top)", 0, 20, 0, 1)
         bar_top = st.selectbox("Bar size (Top)", list(REBAR_SIZES.keys()), index=1)
         if nb_top > 0:
             st.caption(f"→ As' = {nb_top*REBAR_AREA[bar_top]:.0f} mm²")
-
-    with st.expander("🌀 Transverse Steel (Stirrups)", expanded=True):
-        n_legs    = st.number_input("Stirrup legs", 2, 8, 2, 1)
-        stir_size = st.selectbox("Stirrup bar size", list(REBAR_SIZES.keys()), index=0)
-        s         = st.number_input("s — Spacing (mm)", 0.0, 600.0, 200.0, 10.0)
-        st.caption(f"→ Av = {n_legs*REBAR_AREA[stir_size]:.0f} mm²")
 
     with st.expander("⚡ Factored Loads", expanded=True):
         Mf = st.number_input("Mf — Factored moment (kN·m)", 0.0, 10000.0, 200.0, 5.0)
@@ -102,12 +104,23 @@ def build_params():
     As_top = nb_top * REBAR_AREA[bar_top] if nb_top > 0 else 0
     d_top_val = cover + dv_bar + db_top/2
 
+    # ── Auto-calculate effective depths per CSA A23.3-19 Cl. 7.5 geometry ──
+    # Layer 1 (lowest, controls cover): centroid measured from top of section
+    d1_val = h - cover - dv_bar - db1/2
+
+    # Layer 2 (above layer 1): clear vertical gap = max(1.4·max(db1,db2), 30mm)
+    if nb2 > 0:
+        gap_min = max(1.4*max(db1, db2), 30.0)
+        d2_val = d1_val - db1/2 - gap_min - db2/2
+    else:
+        d2_val = 0.0
+
     return {
         "fc": fc, "fy": fy, "fyt": fyt,
         "bw": bw, "h": h, "cover": cover,
         "bf": bf, "hf": hf,
-        "nb1": nb1, "db1": db1, "d1": d1,
-        "nb2": nb2, "db2": db2, "d2": d2 if nb2 > 0 else 0,
+        "nb1": nb1, "db1": db1, "d1": d1_val,
+        "nb2": nb2, "db2": db2, "d2": d2_val,
         "nb_top": nb_top, "db_top": db_top, "d_top": d_top_val,
         "As1": As1, "As2": As2, "As_top": As_top,
         "As": As1 + As2,
@@ -198,16 +211,16 @@ else:
             c2.metric("Mr — Resistance", f"{r['Mr']} kN·m")
             c3.metric("Utilisation", f"{100/r['flex_ratio']:.1f}%" if r['flex_ratio'] else "—")
 
-            st.markdown(f"""
-            | Parameter | Value |
-            |---|---|
-            | Beam type | {"T-Beam" if r["is_T_beam"] else "Rectangular"} |
-            | a — Stress block depth | {r['a']} mm |
-            | c — Neutral axis depth | {r['c']} mm |
-            | εt — Net tensile strain | {r['eps_t']:.5f} |
-            | As — Total tension steel | {r['As']:.0f} mm² |
-            | d — Effective depth | {r['d']:.0f} mm |
-            """)
+            st.markdown(
+f"""| Parameter | Value |
+|---|---|
+| Beam type | {"T-Beam" if r["is_T_beam"] else "Rectangular"} |
+| a — Stress block depth | {r['a']} mm |
+| c — Neutral axis depth | {r['c']} mm |
+| εt — Net tensile strain | {r['eps_t']:.5f} |
+| As — Total tension steel | {r['As']:.0f} mm² |
+| d — Effective depth | {r['d']:.0f} mm |
+""")
 
             def check_row(label, passed, detail=""):
                 icon = "✅" if passed else "❌"
@@ -230,16 +243,16 @@ else:
             c2.metric("Vr — Resistance", f"{r['Vr']} kN")
             c3.metric("Utilisation", f"{100/r['shear_ratio']:.1f}%" if r['shear_ratio'] else "—")
 
-            st.markdown(f"""
-            | Parameter | Value |
-            |---|---|
-            | dv — Effective shear depth | {r['dv']} mm |
-            | θ — Angle (simplified) | {r['theta_v']:.0f}° |
-            | β — Factor | {r['beta_v']:.4f} |
-            | Vc — Concrete resistance | {r['Vc']} kN |
-            | Vs — Steel resistance | {r['Vs']} kN |
-            | Vr,max | {r['Vr_max']} kN |
-            """)
+            st.markdown(
+f"""| Parameter | Value |
+|---|---|
+| dv — Effective shear depth | {r['dv']} mm |
+| θ — Angle (simplified) | {r['theta_v']:.0f}° |
+| β — Factor | {r['beta_v']:.4f} |
+| Vc — Concrete resistance | {r['Vc']} kN |
+| Vs — Steel resistance | {r['Vs']} kN |
+| Vr,max | {r['Vr_max']} kN |
+""")
             st.caption(r.get("beta_method", ""))
 
             st.markdown("**Checks:**")
@@ -266,21 +279,21 @@ else:
 
         # ── DETAILING TAB ────────────────────────────────────────────────────
         with tabs[3]:
-            st.markdown(f"""
-            | Parameter | Value |
-            |---|---|
-            | Clear cover provided | {r['cover']} mm |
-            | Clear spacing (actual) | {r['clear_sp_actual']:.1f} mm |
-            | Min. clear spacing | {r['clear_sp_min']:.1f} mm |
-            | Width needed (layer 1) | {r['width_needed']:.0f} mm |
-            | Development length ld | {r['ld']:.0f} mm |
-            """)
+            detail_rows = [
+                ("Clear cover provided",      f"{r['cover']} mm"),
+                ("Clear spacing (actual)",    f"{r['clear_sp_actual']:.1f} mm"),
+                ("Min. clear spacing",        f"{r['clear_sp_min']:.1f} mm"),
+                ("Width needed (layer 1)",    f"{r['width_needed']:.0f} mm"),
+                ("Development length ld",     f"{r['ld']:.0f} mm"),
+            ]
             if r["nb2"] > 0:
-                st.markdown(f"""
-                | Layer gap (actual) | {r['layer_gap']:.1f} mm |
-                |---|---|
-                | Min. layer gap | {r['layer_gap_min']:.1f} mm |
-                """)
+                detail_rows.append(("Layer gap (actual)",   f"{r['layer_gap']:.1f} mm"))
+                detail_rows.append(("Min. layer gap",       f"{r['layer_gap_min']:.1f} mm"))
+
+            table_md = "| Parameter | Value |\n|---|---|\n"
+            for label, val in detail_rows:
+                table_md += f"| {label} | {val} |\n"
+            st.markdown(table_md)
 
             st.markdown("**Checks:**")
             check_row("Cover ≥ 40mm  (Cl. 7.9)", c["cover_ok"])
@@ -297,13 +310,13 @@ else:
             c1.metric("Mcr — Cracking Moment", f"{r['Mcr']} kN·m")
             c2.metric("Mf — Applied Moment", f"{r['Mf']} kN·m")
 
-            st.markdown(f"""
-            | Parameter | Value |
-            |---|---|
-            | Ig — Gross inertia | {r['Ig']:.0f} ×10⁶ mm⁴ |
-            | Icr — Cracked inertia | {r['Icr']:.0f} ×10⁶ mm⁴ |
-            | Ie — Effective inertia (Branson) | {r['Ie']:.0f} ×10⁶ mm⁴ |
-            """)
+            st.markdown(
+f"""| Parameter | Value |
+|---|---|
+| Ig — Gross inertia | {r['Ig']:.0f} ×10⁶ mm⁴ |
+| Icr — Cracked inertia | {r['Icr']:.0f} ×10⁶ mm⁴ |
+| Ie — Effective inertia (Branson) | {r['Ie']:.0f} ×10⁶ mm⁴ |
+""")
             cracked = r["Mf"] > r["Mcr"]
             if cracked:
                 st.warning(f"Section CRACKED (Mf={r['Mf']} > Mcr={r['Mcr']} kN·m) — use Ie for deflection")

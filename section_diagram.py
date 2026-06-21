@@ -57,10 +57,26 @@ def draw_section(params, results=None):
                      facecolor=CONCRETE, edgecolor=CONCRETE_O, linewidth=1.5))
 
     # ── Stirrups ──────────────────────────────────────────────────────────
+    n_legs = int(params.get("n_legs", 2))
     if Av > 0:
+        # Outer closed stirrup (always drawn — accounts for 2 legs)
         ax.add_patch(patches.Rectangle(
             (web_ox+cover, cover), bw-2*cover, h-2*cover,
             facecolor="none", edgecolor=STIRRUP_C, linewidth=2.2))
+
+        # Additional interior legs (for n_legs > 2) — evenly spaced
+        # vertical ties between the top and bottom of the stirrup
+        extra_legs = n_legs - 2
+        if extra_legs > 0:
+            inner_left  = web_ox + cover
+            inner_right = web_ox + bw - cover
+            # Evenly space the extra verticals between the two outer legs
+            n_gaps = extra_legs + 1
+            for i in range(1, n_gaps):
+                x = inner_left + i * (inner_right - inner_left) / n_gaps
+                ax.plot([x, x], [cover, h-cover],
+                       color=STIRRUP_C, linewidth=2.0, solid_capstyle="butt")
+        # Leg count label is added after all dimension lines are placed (see below)
 
     # ── Stress block + N.A. ───────────────────────────────────────────────
     if results and results.get("a"):
@@ -121,8 +137,16 @@ def draw_section(params, results=None):
         ax.annotate("", xy=(0, -50), xytext=(b, -50),
                    arrowprops=dict(arrowstyle="<->", color="#64748B", lw=0.8))
         ax.text(b/2, -62, f"bf={b:.0f}", ha="center", fontsize=7.5, color="#64748B")
+        leg_label_y = -76
+    else:
+        leg_label_y = -46
 
-    pad_x = max(60, b*0.18); pad_y_top = 40; pad_y_bot = 80 if is_T else 60
+    if Av > 0:
+        ax.text(web_ox+bw/2, leg_label_y, f"{n_legs}-leg stirrups @ {params.get('s',0):.0f}mm",
+               color=STIRRUP_C, fontsize=7.5, ha="center", style="italic")
+
+    pad_x = max(60, b*0.18); pad_y_top = 40
+    pad_y_bot = (95 if is_T else 65)
     ax.set_xlim(-pad_x, b + pad_x + 40)
     ax.set_ylim(-pad_y_bot, h + pad_y_top)
 
