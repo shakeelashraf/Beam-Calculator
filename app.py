@@ -69,7 +69,8 @@ with st.sidebar:
         nb1   = st.number_input("Number of bars (Layer 1)", 1, 20, 4, 1)
         bar1  = st.selectbox("Bar size (Layer 1)", list(REBAR_SIZES.keys()), index=2)
         _dv_bar_preview = REBAR_SIZES[stir_size]
-        _d1_preview = h - cover - _dv_bar_preview/2 - REBAR_SIZES[bar1]/2
+        # d1 = h - cover - stirrup diameter - bar1 diameter/2   (Cl. 7.5 geometry)
+        _d1_preview = h - cover - _dv_bar_preview - REBAR_SIZES[bar1]/2
         st.caption(f"→ As1 = {nb1*REBAR_AREA[bar1]:.0f} mm²  |  d1 = {_d1_preview:.0f} mm  (auto, Cl. 7.5)")
 
     with st.expander("🔩 Bottom Steel — Layer 2 (0 bars = none)"):
