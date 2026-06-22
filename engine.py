@@ -86,22 +86,80 @@ class BeamAnalysis:
         # ── T-beam / rectangular ─────────────────────────────────────────────
         is_T = (b > bw) and (hf > 0); r["is_T_beam"] = is_T
 
-        # Compression steel contribution (ignored in simplified approach — conservative)
-        # Pure tension-controlled flexure
+        # ── Flexure with compression (top) steel — Cl. 10.3 ───────────────────
+        # Standard doubly-reinforced beam solution:
+        #   1. Assume compression steel yields (fs' = fy), solve for a.
+        #   2. Check strain at compression steel: εs' = 0.0035·(c−d')/c
+        #   3. If εs' < εy, steel hasn't yielded — solve quadratic in c for
+        #      the actual (lower) compression-steel stress.
+        eps_cu = 0.0035
+        eps_y  = fy/Es
+        n["eps_y"] = round(eps_y, 5)
+        has_comp_steel = As_top > 0
+        d_prime = d_top
+
         if is_T:
             Cf_fl = a1*PHI_C*fc*(b-bw)*hf
-            req   = PHI_S*fy*As - Cf_fl
+            req = PHI_S*fy*As - Cf_fl - (PHI_S*fy*As_top if has_comp_steel else 0)
             if req > 0:
-                a_val   = req / (a1*PHI_C*fc*bw)
-                Mr      = Cf_fl*(d-hf/2) + a1*PHI_C*fc*bw*a_val*(d-a_val/2)
-                c_depth = a_val/b1; r["flange_na"] = "in web"
+                r["flange_na"] = "in web"
+                a_assumed = req / (a1*PHI_C*fc*bw)
+                if has_comp_steel:
+                    c_assumed = a_assumed / b1
+                    eps_s_prime = eps_cu*(c_assumed-d_prime)/c_assumed if c_assumed > 0 else 0
+                    if eps_s_prime >= eps_y:
+                        a_val = a_assumed; c_depth = c_assumed; fs_prime = fy
+                    else:
+                        # Compression steel below yield — solve quadratic in c
+                        A_q = a1*PHI_C*fc*bw*b1
+                        B_q = PHI_S*Es*eps_cu*As_top - (PHI_S*fy*As - Cf_fl)
+                        C_q = -PHI_S*Es*eps_cu*As_top*d_prime
+                        disc = max(B_q**2 - 4*A_q*C_q, 0)
+                        c_depth = (-B_q + math.sqrt(disc)) / (2*A_q)
+                        a_val   = b1*c_depth
+                        fs_prime = Es*eps_cu*(c_depth-d_prime)/c_depth
+                    Mr = (Cf_fl*(d-hf/2) + a1*PHI_C*fc*bw*a_val*(d-a_val/2)
+                          + PHI_S*fs_prime*As_top*(d-d_prime))
+                else:
+                    a_val = a_assumed; c_depth = a_val/b1; fs_prime = None
+                    Mr = Cf_fl*(d-hf/2) + a1*PHI_C*fc*bw*a_val*(d-a_val/2)
             else:
-                a_val   = (PHI_S*fy*As) / (a1*PHI_C*fc*b)
-                Mr      = PHI_S*fy*As*(d-a_val/2)
-                c_depth = a_val/b1; r["flange_na"] = "in flange"
+                r["flange_na"] = "in flange"
+                a_val = (PHI_S*fy*As - (PHI_S*fy*As_top if has_comp_steel else 0)) / (a1*PHI_C*fc*b)
+                c_depth = a_val/b1
+                if has_comp_steel:
+                    eps_s_prime = eps_cu*(c_depth-d_prime)/c_depth if c_depth > 0 else 0
+                    fs_prime = fy if eps_s_prime >= eps_y else Es*eps_s_prime
+                    Mr = a1*PHI_C*fc*b*a_val*(d-a_val/2) + PHI_S*fs_prime*As_top*(d-d_prime)
+                else:
+                    fs_prime = None
+                    Mr = PHI_S*fy*As*(d-a_val/2)
         else:
-            a_val   = (PHI_S*fy*As) / (a1*PHI_C*fc*bw)
-            Mr      = PHI_S*fy*As*(d-a_val/2); c_depth = a_val/b1
+            if has_comp_steel:
+                # Step 1 — assume compression steel yields
+                a_assumed = PHI_S*fy*(As - As_top) / (a1*PHI_C*fc*bw)
+                c_assumed = a_assumed / b1 if a_assumed > 0 else 0
+                eps_s_prime = eps_cu*(c_assumed-d_prime)/c_assumed if c_assumed > 0 else 0
+                if eps_s_prime >= eps_y:
+                    a_val = a_assumed; c_depth = c_assumed; fs_prime = fy
+                else:
+                    # Step 2 — compression steel below yield: solve quadratic in c
+                    A_q = a1*PHI_C*fc*bw*b1
+                    B_q = PHI_S*Es*eps_cu*As_top - PHI_S*fy*As
+                    C_q = -PHI_S*Es*eps_cu*As_top*d_prime
+                    disc = max(B_q**2 - 4*A_q*C_q, 0)
+                    c_depth = (-B_q + math.sqrt(disc)) / (2*A_q)
+                    a_val   = b1*c_depth
+                    fs_prime = Es*eps_cu*(c_depth-d_prime)/c_depth
+                Mr = a1*PHI_C*fc*bw*a_val*(d-a_val/2) + PHI_S*fs_prime*As_top*(d-d_prime)
+            else:
+                a_val   = (PHI_S*fy*As) / (a1*PHI_C*fc*bw)
+                Mr      = PHI_S*fy*As*(d-a_val/2); c_depth = a_val/b1; fs_prime = None
+
+        if has_comp_steel:
+            r["fs_prime"]     = round(fs_prime, 1)
+            r["eps_s_prime"]  = round(eps_cu*(c_depth-d_prime)/c_depth, 6) if c_depth>0 else 0
+            r["comp_yields"]  = fs_prime >= fy - 1e-6
 
         r.update({"a":round(a_val,1), "c":round(c_depth,1), "Mr":round(Mr/1e6,2)})
 
@@ -114,6 +172,10 @@ class BeamAnalysis:
 
         c_max  = 0.0035*d / (0.0035+0.004)
         As_max = a1*PHI_C*fc*bw*b1*c_max / (PHI_S*fy)
+        if has_comp_steel and fs_prime is not None:
+            # Additional tension steel balanced by compression steel doesn't
+            # reduce ductility — add its contribution (Cl. 10.5.2 commentary)
+            As_max += As_top * (fs_prime/fy)
         r["As_max"] = round(As_max,1); c["As_max"] = As <= As_max
 
         Mf_kNm=Mf/1e6; Mr_kNm=Mr/1e6
