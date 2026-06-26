@@ -22,15 +22,6 @@ st.set_page_config(
 st.markdown("""
 <style>
     .main > div { padding-top: 1.2rem; }
-    .stMetric { background: #F8FAFC !important; border: 1px solid #E5E7EB;
-                border-radius: 8px; padding: 10px; }
-    /* Force readable text colors inside metric boxes regardless of
-       light/dark theme — without this, dark mode inherits light text
-       on the light-forced background above and the boxes look blank. */
-    [data-testid="stMetric"] label,
-    [data-testid="stMetricLabel"] { color: #6B7280 !important; }
-    [data-testid="stMetricValue"] { color: #1E2A3A !important; }
-    [data-testid="stMetricDelta"] { color: #1E2A3A !important; }
     .pass-banner { background:#DCFCE7; color:#15803D; padding:12px 18px;
                    border-radius:8px; font-weight:700; font-size:1.05rem;
                    border:1px solid #86EFAC; }
@@ -45,6 +36,25 @@ st.markdown("""
 
 st.title("CSA A23.3-19 Concrete Beam Analyzer")
 st.caption("Flexure · Shear · Torsion · Deflection · Detailing  —  Simplified method, θ = 35°")
+
+
+def metric_box(label, value):
+    """
+    Renders a metric box using fully inline CSS (no class/theme dependency).
+    st.metric()'s appearance depends on Streamlit's theme CSS variables,
+    which can leave text unreadable in dark mode when we also force a
+    light background. Inline styles bypass that entirely — background
+    and text color are hardcoded on the element itself, so the box reads
+    identically regardless of the viewer's light/dark theme setting.
+    """
+    st.markdown(f"""
+<div style="background:#F8FAFC; border:1px solid #E5E7EB; border-radius:8px;
+            padding:10px 14px; margin-bottom:4px;">
+    <div style="color:#6B7280; font-size:0.8rem; font-weight:500;">{label}</div>
+    <div style="color:#1E2A3A; font-size:1.5rem; font-weight:600; line-height:1.3;">{value}</div>
+</div>
+""", unsafe_allow_html=True)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  SIDEBAR — INPUTS
@@ -228,9 +238,9 @@ else:
         # ── FLEXURE TAB ──────────────────────────────────────────────────────
         with tabs[0]:
             c1, c2, c3 = st.columns(3)
-            c1.metric("Mf — Factored Moment", f"{r['Mf']} kN·m")
-            c2.metric("Mr — Resistance", f"{r['Mr']} kN·m")
-            c3.metric("Utilisation", f"{100/r['flex_ratio']:.1f}%" if r['flex_ratio'] else "—")
+            with c1: metric_box("Mf — Factored Moment", f"{r['Mf']} kN·m")
+            with c2: metric_box("Mr — Resistance", f"{r['Mr']} kN·m")
+            with c3: metric_box("Utilisation", f"{100/r['flex_ratio']:.1f}%" if r['flex_ratio'] else "—")
 
             st.markdown(
 f"""| Parameter | Value |
@@ -278,9 +288,9 @@ f"""| Parameter | Value |
         # ── SHEAR TAB ────────────────────────────────────────────────────────
         with tabs[1]:
             c1, c2, c3 = st.columns(3)
-            c1.metric("Vf — Factored Shear", f"{r['Vf']} kN")
-            c2.metric("Vr — Resistance", f"{r['Vr']} kN")
-            c3.metric("Utilisation", f"{100/r['shear_ratio']:.1f}%" if r['shear_ratio'] else "—")
+            with c1: metric_box("Vf — Factored Shear", f"{r['Vf']} kN")
+            with c2: metric_box("Vr — Resistance", f"{r['Vr']} kN")
+            with c3: metric_box("Utilisation", f"{100/r['shear_ratio']:.1f}%" if r['shear_ratio'] else "—")
 
             st.markdown(
 f"""| Parameter | Value |
@@ -307,8 +317,8 @@ f"""| Parameter | Value |
         with tabs[2]:
             if r["Tf"] > 0:
                 c1, c2 = st.columns(2)
-                c1.metric("Tf — Factored Torsion", f"{r['Tf']} kN·m")
-                c2.metric("Tcr — Cracking Torque", f"{r['Tcr']} kN·m")
+                with c1: metric_box("Tf — Factored Torsion", f"{r['Tf']} kN·m")
+                with c2: metric_box("Tcr — Cracking Torque", f"{r['Tcr']} kN·m")
                 check_row("Tf ≤ Tcr  (Cl. 11.2.9)", c["torsion_threshold"])
                 if not c["torsion_threshold"]:
                     st.warning("Full torsion design required per Cl. 11.3.9 & 11.4 — "
@@ -346,8 +356,8 @@ f"""| Parameter | Value |
         # ── DEFLECTION TAB ───────────────────────────────────────────────────
         with tabs[4]:
             c1, c2 = st.columns(2)
-            c1.metric("Mcr — Cracking Moment", f"{r['Mcr']} kN·m")
-            c2.metric("Mf — Applied Moment", f"{r['Mf']} kN·m")
+            with c1: metric_box("Mcr — Cracking Moment", f"{r['Mcr']} kN·m")
+            with c2: metric_box("Mf — Applied Moment", f"{r['Mf']} kN·m")
 
             st.markdown(
 f"""| Parameter | Value |
