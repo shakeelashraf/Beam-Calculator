@@ -22,8 +22,15 @@ st.set_page_config(
 st.markdown("""
 <style>
     .main > div { padding-top: 1.2rem; }
-    .stMetric { background: #F8FAFC; border: 1px solid #E5E7EB;
+    .stMetric { background: #F8FAFC !important; border: 1px solid #E5E7EB;
                 border-radius: 8px; padding: 10px; }
+    /* Force readable text colors inside metric boxes regardless of
+       light/dark theme — without this, dark mode inherits light text
+       on the light-forced background above and the boxes look blank. */
+    [data-testid="stMetric"] label,
+    [data-testid="stMetricLabel"] { color: #6B7280 !important; }
+    [data-testid="stMetricValue"] { color: #1E2A3A !important; }
+    [data-testid="stMetricDelta"] { color: #1E2A3A !important; }
     .pass-banner { background:#DCFCE7; color:#15803D; padding:12px 18px;
                    border-radius:8px; font-weight:700; font-size:1.05rem;
                    border:1px solid #86EFAC; }
