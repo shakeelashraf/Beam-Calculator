@@ -14,7 +14,7 @@ from section_diagram import draw_section
 
 st.set_page_config(
     page_title="CSA A23.3-19 Beam Analyzer",
-    page_icon="📐",
+    page_icon="🏗",
     layout="wide",
 )
 
@@ -36,7 +36,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📐 CSA A23.3-19 Concrete Beam Analyzer")
+st.title("CSA A23.3-19 Concrete Beam Analyzer")
 st.caption("Flexure · Shear · Torsion · Deflection · Detailing  —  Simplified method, θ = 35°")
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -45,12 +45,12 @@ st.caption("Flexure · Shear · Torsion · Deflection · Detailing  —  Simplif
 with st.sidebar:
     st.header("Input Parameters")
 
-    with st.expander("🧱 Materials", expanded=True):
+    with st.expander("Materials", expanded=True):
         fc  = st.number_input("f'c — Concrete strength (MPa)", 15.0, 100.0, 30.0, 1.0)
         fy  = st.number_input("fy — Steel yield strength (MPa)", 300.0, 600.0, 400.0, 10.0)
         fyt = st.number_input("fyt — Stirrup yield strength (MPa)", 300.0, 600.0, 400.0, 10.0)
 
-    with st.expander("📏 Section Geometry", expanded=True):
+    with st.expander("Section Geometry", expanded=True):
         bw     = st.number_input("bw — Web width (mm)", 100.0, 2000.0, 300.0, 10.0)
         h      = st.number_input("h — Total depth (mm)", 150.0, 3000.0, 600.0, 10.0)
         cover  = st.number_input("Clear cover (mm)", 20.0, 100.0, 40.0, 5.0)
@@ -59,13 +59,13 @@ with st.sidebar:
         bf = st.number_input("bf — Flange width (mm)", 0.0, 4000.0, 0.0, 10.0)
         hf = st.number_input("hf — Flange depth (mm)", 0.0, 500.0, 0.0, 10.0)
 
-    with st.expander("🌀 Transverse Steel (Stirrups)", expanded=True):
+    with st.expander("Transverse Steel (Stirrups)", expanded=True):
         n_legs    = st.number_input("Stirrup legs", 2, 8, 2, 1)
         stir_size = st.selectbox("Stirrup bar size", list(REBAR_SIZES.keys()), index=0)
         s         = st.number_input("s — Spacing (mm)", 0.0, 600.0, 200.0, 10.0)
         st.caption(f"→ Av = {n_legs*REBAR_AREA[stir_size]:.0f} mm²")
 
-    with st.expander("🔩 Bottom Steel — Layer 1 (tension)", expanded=True):
+    with st.expander("Bottom Steel — Layer 1 (tension)", expanded=True):
         nb1   = st.number_input("Number of bars (Layer 1)", 1, 20, 4, 1)
         bar1  = st.selectbox("Bar size (Layer 1)", list(REBAR_SIZES.keys()), index=2)
         _dv_bar_preview = REBAR_SIZES[stir_size]
@@ -73,7 +73,7 @@ with st.sidebar:
         _d1_preview = h - cover - _dv_bar_preview - REBAR_SIZES[bar1]/2
         st.caption(f"→ As1 = {nb1*REBAR_AREA[bar1]:.0f} mm²  |  d1 = {_d1_preview:.0f} mm  (auto, Cl. 7.5)")
 
-    with st.expander("🔩 Bottom Steel — Layer 2 (0 bars = none)"):
+    with st.expander("Bottom Steel — Layer 2 (0 bars = none)"):
         nb2   = st.number_input("Number of bars (Layer 2)", 0, 20, 0, 1)
         bar2  = st.selectbox("Bar size (Layer 2)", list(REBAR_SIZES.keys()), index=2)
         if nb2 > 0:
@@ -81,19 +81,19 @@ with st.sidebar:
             _d2_preview = _d1_preview - REBAR_SIZES[bar1]/2 - _gap_min_preview - REBAR_SIZES[bar2]/2
             st.caption(f"→ As2 = {nb2*REBAR_AREA[bar2]:.0f} mm²  |  d2 = {_d2_preview:.0f} mm  (auto, Cl. 7.5)")
 
-    with st.expander("🔩 Top Steel — Compression (0 bars = none)"):
+    with st.expander("Top Steel — Compression (0 bars = none)"):
         nb_top  = st.number_input("Number of bars (Top)", 0, 20, 0, 1)
         bar_top = st.selectbox("Bar size (Top)", list(REBAR_SIZES.keys()), index=1)
         if nb_top > 0:
             st.caption(f"→ As' = {nb_top*REBAR_AREA[bar_top]:.0f} mm²")
 
-    with st.expander("⚡ Factored Loads", expanded=True):
+    with st.expander("Factored Loads", expanded=True):
         Mf = st.number_input("Mf — Factored moment (kN·m)", 0.0, 10000.0, 200.0, 5.0)
         Vf = st.number_input("Vf — Factored shear (kN)", 0.0, 5000.0, 150.0, 5.0)
         Tf = st.number_input("Tf — Factored torsion (kN·m)", 0.0, 1000.0, 0.0, 1.0)
 
     st.markdown("---")
-    analyze_clicked = st.button("▶  ANALYZE", type="primary", use_container_width=True)
+    analyze_clicked = st.button("ANALYZE", type="primary", use_container_width=True)
 
 
 def build_params():
@@ -136,25 +136,38 @@ def build_params():
 # ══════════════════════════════════════════════════════════════════════════════
 if "results" not in st.session_state:
     st.session_state.results = None
+if "analyzed_params" not in st.session_state:
+    st.session_state.analyzed_params = None
+
+current_params = build_params()
+
+# If the user has changed any input since the last Analyze click, the stored
+# results (and diagram) are stale — clear them so the app falls back to the
+# placeholder/preview view until Analyze is clicked again.
+if (st.session_state.results is not None
+        and st.session_state.analyzed_params is not None
+        and current_params != st.session_state.analyzed_params
+        and not analyze_clicked):
+    st.session_state.results = None
 
 if analyze_clicked:
-    params = build_params()
     try:
-        r, c, n = BeamAnalysis(params).run()
-        st.session_state.results = (r, c, n, params)
+        r, c, n = BeamAnalysis(current_params).run()
+        st.session_state.results = (r, c, n, current_params)
+        st.session_state.analyzed_params = current_params
     except Exception as e:
         st.error(f"Analysis error: {e}")
         st.session_state.results = None
+        st.session_state.analyzed_params = None
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  MAIN PANEL
 # ══════════════════════════════════════════════════════════════════════════════
 if st.session_state.results is None:
-    st.info("👈  Enter parameters in the sidebar and click **▶ ANALYZE** to begin.")
+    st.info("Enter parameters in the sidebar and click **ANALYZE** to begin.")
     # Show a live preview of the section as the user types
     try:
-        preview_params = build_params()
-        fig = draw_section(preview_params, None)
+        fig = draw_section(current_params, None)
         col1, col2 = st.columns([1, 2])
         with col1:
             st.subheader("Cross-Section Preview")
@@ -167,10 +180,10 @@ else:
     # ── Overall status banner ────────────────────────────────────────────────
     ok = r["overall_pass"]
     if ok:
-        st.markdown('<div class="pass-banner">✔  All Checks Passed</div>',
+        st.markdown('<div class="pass-banner">&#10003;  All Checks Passed</div>',
                     unsafe_allow_html=True)
     else:
-        st.markdown('<div class="fail-banner">✘  One or More Checks Failed</div>',
+        st.markdown('<div class="fail-banner">&#10007;  One or More Checks Failed</div>',
                     unsafe_allow_html=True)
 
     st.markdown("")
@@ -184,7 +197,7 @@ else:
         st.pyplot(fig, use_container_width=True)
 
         st.markdown("---")
-        st.subheader("📄 Hand Calculation Report")
+        st.subheader("Hand Calculation Report")
         # Generate PDF on demand
         tmp_path = os.path.join(tempfile.gettempdir(), "beam_calc_report.pdf")
         try:
@@ -192,7 +205,7 @@ else:
             with open(tmp_path, "rb") as f:
                 pdf_bytes = f.read()
             st.download_button(
-                label="🖨  Download PDF Report",
+                label="Download PDF Report",
                 data=pdf_bytes,
                 file_name="beam_hand_calculation.pdf",
                 mime="application/pdf",
@@ -203,7 +216,7 @@ else:
 
     # ── RIGHT: Results ────────────────────────────────────────────────────────
     with col_results:
-        tabs = st.tabs(["📐 Flexure", "⚡ Shear", "🔄 Torsion", "📏 Detailing", "📉 Deflection"])
+        tabs = st.tabs(["Flexure", "Shear", "Torsion", "Detailing", "Deflection"])
 
         # ── FLEXURE TAB ──────────────────────────────────────────────────────
         with tabs[0]:
@@ -223,8 +236,26 @@ f"""| Parameter | Value |
 | d — Effective depth | {r['d']:.0f} mm |
 """)
 
+            if params.get("nb_top", 0) > 0:
+                st.markdown("**Force equilibrium (T = Cc + Cs'):**")
+                force_rows = [("T — Tension steel force", f"{r.get('T_kN','—')} kN")]
+                if r.get("Cf_fl_kN"):
+                    force_rows.append(("Cf — Flange overhang force", f"{r['Cf_fl_kN']} kN"))
+                force_rows.append(("Cc — Concrete compression force", f"{r.get('Cc_kN','—')} kN"))
+                force_rows.append(("Cs' — Net compression steel force", f"{r.get('Cs_net_kN',0)} kN"))
+                force_md = "| Force | Value |\n|---|---|\n"
+                for label, val in force_rows:
+                    force_md += f"| {label} | {val} |\n"
+                st.markdown(force_md)
+                if "fs_prime" in r:
+                    yield_status = "yields (fs'=fy)" if r.get("comp_yields") else "does NOT yield"
+                    st.caption(f"Compression steel {yield_status} — fs' = {r['fs_prime']:.1f} MPa, εs' = {r.get('eps_s_prime',0):.5f}")
+                else:
+                    st.warning("Top steel is not engaged in compression for this loading "
+                              "(neutral axis is above it, c ≤ d') — resolved as singly-reinforced.")
+
             def check_row(label, passed, detail=""):
-                icon = "✅" if passed else "❌"
+                icon = "&#10003;" if passed else "&#10007;"
                 cls  = "check-pass" if passed else "check-fail"
                 st.markdown(f"{icon} <span class='{cls}'>{label}</span>  {detail}",
                            unsafe_allow_html=True)

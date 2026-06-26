@@ -25,6 +25,72 @@ def alpha1(fc): return max(0.85 - 0.0015*fc, 0.67)
 def beta1(fc):  return max(0.97 - 0.0025*fc, 0.67)
 def ec_mod(fc, wc=2400): return (3300*math.sqrt(fc)+6900)*(wc/2300)**1.5
 
+Es      = 200000.0
+EPS_CU  = 0.0035
+
+def _solve_compression_block(T_demand, width, fc, fy, a1, b1, As_top, d_prime):
+    """
+    Solves for the equivalent stress-block depth `a` and neutral-axis depth `c`
+    for a compression zone of given `width`, given a net tension demand
+    T_demand (N) that this block + any compression steel must balance.
+
+    Force equilibrium:   T_demand = Cc + Cs'_net
+        Cc      = α1·φc·f'c·width·a
+        Cs'_net = As'·(φs·fs' − α1·φc·f'c)      (nets out displaced concrete)
+
+    Procedure:
+      1. Assume compression steel yields (fs'=fy) — solve for c directly.
+      2. Check strain εs' = 0.0035·(c−d')/c against εy.
+      3. If εs' < εy, solve the exact quadratic in c using fs'=Es·εs'.
+      4. GUARD: if the resulting c ends up ≤ d' (i.e. the "compression"
+         steel is actually at or below the neutral axis — not in the
+         compression zone at all for this loading), discard the
+         compression-steel contribution entirely and resolve as if
+         As_top = 0. This prevents unphysical results (e.g. negative
+         steel stress) for lightly-loaded sections with high top steel.
+
+    Returns dict: a, c, fs_prime (or None), Cc, Cs_net, comp_engaged (bool)
+    """
+    concrete_disp = a1*PHI_C*fc
+    eps_y = fy/Es
+
+    def _singly():
+        a = T_demand / (a1*PHI_C*fc*width)
+        c = a/b1
+        Cc = a1*PHI_C*fc*width*a
+        return dict(a=a, c=c, fs_prime=None, Cc=Cc, Cs_net=0.0, comp_engaged=False)
+
+    if As_top <= 0:
+        return _singly()
+
+    # Step 1: assume compression steel yields — solve c directly (linear)
+    numerator = T_demand - As_top*(PHI_S*fy - concrete_disp)
+    c_assumed = numerator / (a1*PHI_C*fc*width*b1) if numerator > 0 else 0
+    eps_s_prime = EPS_CU*(c_assumed-d_prime)/c_assumed if c_assumed > 0 else -1
+
+    if eps_s_prime >= eps_y:
+        c = c_assumed
+        fs_prime = fy
+    else:
+        # Step 2: compression steel below yield — solve quadratic in c
+        A_q = a1*PHI_C*fc*width*b1
+        B_q = As_top*PHI_S*Es*EPS_CU - As_top*concrete_disp - T_demand
+        C_q = -As_top*PHI_S*Es*EPS_CU*d_prime
+        disc = max(B_q**2 - 4*A_q*C_q, 0)
+        c = (-B_q + math.sqrt(disc)) / (2*A_q) if A_q != 0 else 0
+        fs_prime = Es*EPS_CU*(c-d_prime)/c if c > 0 else 0
+
+    # GUARD: compression steel must actually be within the compression zone
+    if c <= d_prime:
+        return _singly()
+
+    a = b1*c
+    Cc = a1*PHI_C*fc*width*a
+    Cs_net = As_top*(PHI_S*fs_prime - concrete_disp)
+    return dict(a=a, c=c, fs_prime=fs_prime, Cc=Cc, Cs_net=Cs_net, comp_engaged=True)
+
+
+
 class BeamAnalysis:
     def __init__(self, p):
         self.p = p
@@ -87,78 +153,57 @@ class BeamAnalysis:
         is_T = (b > bw) and (hf > 0); r["is_T_beam"] = is_T
 
         # ── Flexure with compression (top) steel — Cl. 10.3 ───────────────────
-        # Standard doubly-reinforced beam solution:
-        #   1. Assume compression steel yields (fs' = fy), solve for a.
-        #   2. Check strain at compression steel: εs' = 0.0035·(c−d')/c
-        #   3. If εs' < εy, steel hasn't yielded — solve quadratic in c for
-        #      the actual (lower) compression-steel stress.
-        eps_cu = 0.0035
+        # Rigorous doubly-reinforced beam solution via _solve_compression_block().
+        # Force equilibrium:   T = Cc + Cs'_net
+        #   φs·fy·As = α1·φc·f'c·width·a + As'·(φs·fs' − α1·φc·f'c)
+        # Cs'_net nets out the concrete displaced by the compression bars.
+        # The helper also guards against the case where the "compression"
+        # steel actually sits at or below the neutral axis (not engaged).
         eps_y  = fy/Es
         n["eps_y"] = round(eps_y, 5)
         has_comp_steel = As_top > 0
         d_prime = d_top
 
         if is_T:
-            Cf_fl = a1*PHI_C*fc*(b-bw)*hf
-            req = PHI_S*fy*As - Cf_fl - (PHI_S*fy*As_top if has_comp_steel else 0)
-            if req > 0:
-                r["flange_na"] = "in web"
-                a_assumed = req / (a1*PHI_C*fc*bw)
-                if has_comp_steel:
-                    c_assumed = a_assumed / b1
-                    eps_s_prime = eps_cu*(c_assumed-d_prime)/c_assumed if c_assumed > 0 else 0
-                    if eps_s_prime >= eps_y:
-                        a_val = a_assumed; c_depth = c_assumed; fs_prime = fy
-                    else:
-                        # Compression steel below yield — solve quadratic in c
-                        A_q = a1*PHI_C*fc*bw*b1
-                        B_q = PHI_S*Es*eps_cu*As_top - (PHI_S*fy*As - Cf_fl)
-                        C_q = -PHI_S*Es*eps_cu*As_top*d_prime
-                        disc = max(B_q**2 - 4*A_q*C_q, 0)
-                        c_depth = (-B_q + math.sqrt(disc)) / (2*A_q)
-                        a_val   = b1*c_depth
-                        fs_prime = Es*eps_cu*(c_depth-d_prime)/c_depth
-                    Mr = (Cf_fl*(d-hf/2) + a1*PHI_C*fc*bw*a_val*(d-a_val/2)
-                          + PHI_S*fs_prime*As_top*(d-d_prime))
-                else:
-                    a_val = a_assumed; c_depth = a_val/b1; fs_prime = None
-                    Mr = Cf_fl*(d-hf/2) + a1*PHI_C*fc*bw*a_val*(d-a_val/2)
-            else:
+            comp_term_full = As_top*(PHI_S*fy - a1*PHI_C*fc) if has_comp_steel else 0
+            # Test whether N.A. falls in flange (full width b) or web
+            a_flange_assumed = (PHI_S*fy*As - comp_term_full) / (a1*PHI_C*fc*b)
+
+            if a_flange_assumed <= hf:
                 r["flange_na"] = "in flange"
-                a_val = (PHI_S*fy*As - (PHI_S*fy*As_top if has_comp_steel else 0)) / (a1*PHI_C*fc*b)
-                c_depth = a_val/b1
-                if has_comp_steel:
-                    eps_s_prime = eps_cu*(c_depth-d_prime)/c_depth if c_depth > 0 else 0
-                    fs_prime = fy if eps_s_prime >= eps_y else Es*eps_s_prime
-                    Mr = a1*PHI_C*fc*b*a_val*(d-a_val/2) + PHI_S*fs_prime*As_top*(d-d_prime)
-                else:
-                    fs_prime = None
-                    Mr = PHI_S*fy*As*(d-a_val/2)
-        else:
-            if has_comp_steel:
-                # Step 1 — assume compression steel yields
-                a_assumed = PHI_S*fy*(As - As_top) / (a1*PHI_C*fc*bw)
-                c_assumed = a_assumed / b1 if a_assumed > 0 else 0
-                eps_s_prime = eps_cu*(c_assumed-d_prime)/c_assumed if c_assumed > 0 else 0
-                if eps_s_prime >= eps_y:
-                    a_val = a_assumed; c_depth = c_assumed; fs_prime = fy
-                else:
-                    # Step 2 — compression steel below yield: solve quadratic in c
-                    A_q = a1*PHI_C*fc*bw*b1
-                    B_q = PHI_S*Es*eps_cu*As_top - PHI_S*fy*As
-                    C_q = -PHI_S*Es*eps_cu*As_top*d_prime
-                    disc = max(B_q**2 - 4*A_q*C_q, 0)
-                    c_depth = (-B_q + math.sqrt(disc)) / (2*A_q)
-                    a_val   = b1*c_depth
-                    fs_prime = Es*eps_cu*(c_depth-d_prime)/c_depth
-                Mr = a1*PHI_C*fc*bw*a_val*(d-a_val/2) + PHI_S*fs_prime*As_top*(d-d_prime)
+                sol = _solve_compression_block(PHI_S*fy*As, b, fc, fy, a1, b1,
+                                               As_top, d_prime)
+                a_val, c_depth, fs_prime = sol["a"], sol["c"], sol["fs_prime"]
+                Mr = sol["Cc"]*(d-a_val/2) + sol["Cs_net"]*(d-d_prime)
+                r["Cc_kN"]     = round(sol["Cc"]/1e3, 1)
+                r["Cs_net_kN"] = round(sol["Cs_net"]/1e3, 1)
+                r["T_kN"]      = round(PHI_S*fy*As/1e3, 1)
+                has_comp_steel = sol["comp_engaged"]
             else:
-                a_val   = (PHI_S*fy*As) / (a1*PHI_C*fc*bw)
-                Mr      = PHI_S*fy*As*(d-a_val/2); c_depth = a_val/b1; fs_prime = None
+                r["flange_na"] = "in web"
+                Cf_fl = a1*PHI_C*fc*(b-bw)*hf
+                sol = _solve_compression_block(PHI_S*fy*As - Cf_fl, bw, fc, fy,
+                                               a1, b1, As_top, d_prime)
+                a_val, c_depth, fs_prime = sol["a"], sol["c"], sol["fs_prime"]
+                Mr = Cf_fl*(d-hf/2) + sol["Cc"]*(d-a_val/2) + sol["Cs_net"]*(d-d_prime)
+                r["Cf_fl_kN"]  = round(Cf_fl/1e3, 1)
+                r["Cc_kN"]     = round(sol["Cc"]/1e3, 1)
+                r["Cs_net_kN"] = round(sol["Cs_net"]/1e3, 1)
+                r["T_kN"]      = round(PHI_S*fy*As/1e3, 1)
+                has_comp_steel = sol["comp_engaged"]
+        else:
+            sol = _solve_compression_block(PHI_S*fy*As, bw, fc, fy, a1, b1,
+                                           As_top, d_prime)
+            a_val, c_depth, fs_prime = sol["a"], sol["c"], sol["fs_prime"]
+            Mr = sol["Cc"]*(d-a_val/2) + sol["Cs_net"]*(d-d_prime)
+            r["Cc_kN"]     = round(sol["Cc"]/1e3, 1)
+            r["Cs_net_kN"] = round(sol["Cs_net"]/1e3, 1)
+            r["T_kN"]      = round(PHI_S*fy*As/1e3, 1)
+            has_comp_steel = sol["comp_engaged"]
 
         if has_comp_steel:
             r["fs_prime"]     = round(fs_prime, 1)
-            r["eps_s_prime"]  = round(eps_cu*(c_depth-d_prime)/c_depth, 6) if c_depth>0 else 0
+            r["eps_s_prime"]  = round(EPS_CU*(c_depth-d_prime)/c_depth, 6) if c_depth>0 else 0
             r["comp_yields"]  = fs_prime >= fy - 1e-6
 
         r.update({"a":round(a_val,1), "c":round(c_depth,1), "Mr":round(Mr/1e6,2)})

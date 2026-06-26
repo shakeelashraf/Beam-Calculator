@@ -79,22 +79,29 @@ def draw_section(params, results=None):
         # Leg count label is added after all dimension lines are placed (see below)
 
     # ── Stress block + N.A. ───────────────────────────────────────────────
+    section_right = b if is_T else bw   # rightmost edge of full section
     if results and results.get("a"):
         a_mm = results["a"]; c_mm = results["c"]
-        if a_mm <= hf and is_T:
+        if is_T and a_mm > hf:
+            # N.A. in web: flange portion spans full flange width (depth hf),
+            # web portion below spans web width only (depth a_mm - hf)
+            ax.add_patch(patches.Rectangle((0, h-hf), b, hf,
+                         facecolor=COMP_COL, alpha=0.55, edgecolor="none"))
+            ax.add_patch(patches.Rectangle((web_ox, h-a_mm), bw, a_mm-hf,
+                         facecolor=COMP_COL, alpha=0.55, edgecolor="none"))
+        elif is_T and a_mm <= hf:
+            # N.A. within the flange: full flange width only
             ax.add_patch(patches.Rectangle((0, h-a_mm), b, a_mm,
                          facecolor=COMP_COL, alpha=0.55, edgecolor="none"))
         else:
-            sb_x = 0 if not is_T else web_ox
-            sb_w = bw if is_T else bw
-            sb_x = 0 if not is_T else 0
-            ax.add_patch(patches.Rectangle((0, h-a_mm), (b if (is_T and a_mm<=hf) else bw), a_mm,
+            # Rectangular section
+            ax.add_patch(patches.Rectangle((0, h-a_mm), bw, a_mm,
                          facecolor=COMP_COL, alpha=0.55, edgecolor="none"))
-        ax.axhline(y=h-c_mm, color=NA_COL, linestyle="--", linewidth=1.4,
-                   xmin=(web_ox-10)/ (b+20) if is_T else 0, xmax=1)
-        ax.plot([web_ox-8, web_ox+bw+8], [h-c_mm, h-c_mm],
+
+        # N.A. dashed line — spans the full section width with a small margin
+        ax.plot([-8, section_right+8], [h-c_mm, h-c_mm],
                color=NA_COL, linestyle="--", linewidth=1.4)
-        ax.text(web_ox+bw+12, h-c_mm, f"N.A.  c={c_mm:.0f}mm",
+        ax.text(section_right+12, h-c_mm, f"N.A.  c={c_mm:.0f}mm",
                color=NA_COL, fontsize=8, fontweight="bold", va="center")
 
     def draw_bars(n_bars, db, depth_from_top, color, label, label_below=True):
@@ -123,9 +130,9 @@ def draw_section(params, results=None):
     draw_bars(nb1, db1, d1, STEEL, f"{nb1}\u2013{_bar_name(db1)} (L1)")
 
     # ── Dimensions ────────────────────────────────────────────────────────
-    ax.annotate("", xy=(bw+web_ox+28, 0), xytext=(bw+web_ox+28, h),
+    ax.annotate("", xy=(section_right+28, 0), xytext=(section_right+28, h),
                arrowprops=dict(arrowstyle="<->", color="#374151", lw=1))
-    ax.text(bw+web_ox+34, h/2, f"h={h:.0f}", rotation=90, va="center",
+    ax.text(section_right+34, h/2, f"h={h:.0f}", rotation=90, va="center",
            fontsize=8, color="#374151")
 
     ax.annotate("", xy=(web_ox, -22), xytext=(web_ox+bw, -22),
@@ -145,9 +152,9 @@ def draw_section(params, results=None):
         ax.text(web_ox+bw/2, leg_label_y, f"{n_legs}-leg stirrups @ {params.get('s',0):.0f}mm",
                color=STIRRUP_C, fontsize=7.5, ha="center", style="italic")
 
-    pad_x = max(60, b*0.18); pad_y_top = 40
+    pad_x = max(85, b*0.18); pad_y_top = 40
     pad_y_bot = (95 if is_T else 65)
-    ax.set_xlim(-pad_x, b + pad_x + 40)
+    ax.set_xlim(-pad_x, section_right + pad_x + 50)
     ax.set_ylim(-pad_y_bot, h + pad_y_top)
 
     plt.tight_layout()
