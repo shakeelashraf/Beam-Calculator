@@ -104,7 +104,10 @@ def draw_section(params, results=None):
         ax.text(section_right+12, h-c_mm, f"N.A.  c={c_mm:.0f}mm",
                color=NA_COL, fontsize=8, fontweight="bold", va="center")
 
-    def draw_bars(n_bars, db, depth_from_top, color, label, label_below=True):
+    def draw_bars(n_bars, db, depth_from_top, color):
+        """Draws bar circles only — labels are handled separately in the
+        legend stack below, to avoid collisions when multiple layers or
+        stirrup labels sit close together near the bottom of the section."""
         if n_bars <= 0: return
         y = h - depth_from_top
         inner_left  = web_ox + cover + dv_b + db/2
@@ -116,18 +119,12 @@ def draw_section(params, results=None):
         for x in xs:
             ax.add_patch(patches.Circle((x, y), db/2, facecolor=color,
                          edgecolor="white", linewidth=0.8, zorder=5))
-        As_lbl = n_bars * math.pi*(db/2)**2
-        offset = -(db/2+22) if label_below else (db/2+18)
-        ax.text(bw/2 + web_ox, y+offset, f"{label}  As={As_lbl:.0f}mm\u00b2",
-               color=color, fontsize=7.5, fontweight="bold", ha="center",
-               bbox=dict(facecolor="white", edgecolor="none", alpha=0.75, pad=1))
 
     if nb_top > 0:
-        draw_bars(nb_top, db_top, d_top, STEEL_TOP,
-                 f"{nb_top}\u2013{_bar_name(db_top)}", label_below=False)
+        draw_bars(nb_top, db_top, d_top, STEEL_TOP)
     if nb2 > 0 and d2 > 0:
-        draw_bars(nb2, db2, d2, STEEL, f"{nb2}\u2013{_bar_name(db2)} (L2)")
-    draw_bars(nb1, db1, d1, STEEL, f"{nb1}\u2013{_bar_name(db1)} (L1)")
+        draw_bars(nb2, db2, d2, STEEL)
+    draw_bars(nb1, db1, d1, STEEL)
 
     # ── Dimensions ────────────────────────────────────────────────────────
     ax.annotate("", xy=(section_right+28, 0), xytext=(section_right+28, h),
@@ -140,24 +137,55 @@ def draw_section(params, results=None):
     ax.text(web_ox+bw/2, -34, f"bw={bw:.0f}", ha="center",
            fontsize=8, color="#374151")
 
+    lowest_dim_y = -34
     if is_T:
         ax.annotate("", xy=(0, -50), xytext=(b, -50),
                    arrowprops=dict(arrowstyle="<->", color="#64748B", lw=0.8))
         ax.text(b/2, -62, f"bf={b:.0f}", ha="center", fontsize=7.5, color="#64748B")
-        leg_label_y = -76
-    else:
-        leg_label_y = -46
-
-    if Av > 0:
-        ax.text(web_ox+bw/2, leg_label_y, f"{n_legs}-leg stirrups @ {params.get('s',0):.0f}mm",
-               color=STIRRUP_C, fontsize=7.5, ha="center", style="italic")
+        lowest_dim_y = -62
 
     pad_x = max(85, b*0.18); pad_y_top = 40
-    pad_y_bot = (95 if is_T else 65)
+    pad_y_bot = abs(lowest_dim_y) + 25
     ax.set_xlim(-pad_x, section_right + pad_x + 50)
     ax.set_ylim(-pad_y_bot, h + pad_y_top)
 
-    plt.tight_layout()
+    # ── Legend stack — figure-fraction coordinates ──────────────────────────
+    # Placed using fig.text() with transform=fig.transFigure rather than
+    # data/axes coordinates. This is essential for T-beams: a wide flange
+    # forces set_aspect('equal') to compress the rendered scale heavily,
+    # which would otherwise squeeze data-coordinate text into overlapping
+    # rows even though their Y-values are far apart. Figure-fraction
+    # coordinates are completely independent of the data's aspect ratio,
+    # so legend spacing stays consistent and readable for any beam geometry.
+    legend_entries = []
+    if nb_top > 0:
+        legend_entries.append((STEEL_TOP,
+            f"{nb_top}\u2013{_bar_name(db_top)} top   As'={nb_top*math.pi*(db_top/2)**2:.0f}mm\u00b2"))
+    if nb2 > 0 and d2 > 0:
+        legend_entries.append((STEEL,
+            f"{nb2}\u2013{_bar_name(db2)} (layer 2)   As2={nb2*math.pi*(db2/2)**2:.0f}mm\u00b2"))
+    legend_entries.append((STEEL,
+        f"{nb1}\u2013{_bar_name(db1)} (layer 1)   As1={nb1*math.pi*(db1/2)**2:.0f}mm\u00b2"))
+    if Av > 0:
+        legend_entries.append((STIRRUP_C,
+            f"{n_legs}-leg stirrups @ {params.get('s',0):.0f}mm"))
+
+    n_lines = len(legend_entries)
+    line_frac = 0.032               # vertical spacing per line, in figure fraction
+    bottom_margin = 0.06 + n_lines*line_frac
+
+    # Reserve bottom margin for the legend block (overrides tight_layout)
+    fig.subplots_adjust(bottom=bottom_margin, top=0.97, left=0.02, right=0.98)
+
+    for i, (color, text) in enumerate(legend_entries):
+        y_frac = bottom_margin - 0.025 - i*line_frac
+        fig.text(0.04, y_frac, "\u25A0", color=color, fontsize=9,
+                 fontweight="bold", va="center", ha="left",
+                 transform=fig.transFigure)
+        fig.text(0.075, y_frac, text, color=color, fontsize=8,
+                 fontweight="bold", va="center", ha="left",
+                 transform=fig.transFigure)
+
     return fig
 
 
