@@ -771,9 +771,10 @@ def generate_report(r, c, n, params, filepath):
          passed=c["As_min"],
          note=f"As = {As:.0f} mm^{{2}}  {'≥' if c['As_min'] else '<'}  As,min = {r['As_min']:.0f} mm^{{2}}")
 
+    c_max_val = 700*0.8*d/(700+fy)
     step("Cl.10.5.2", "Maximum tension steel  As,max",
-         "c,max = 0.0035·d / (0.0035 + 0.004);  As,max = α_{1}·φc·f'c·bw·β_{{1}}·c,max / (φs·fy)",
-         f"c,max = {0.0035*d/(0.0035+0.004):.1f} mm  →  As,max = ...",
+         "c,max = 700·0.8·d / (700 + fy);  As,max = α_{1}·φc·f'c·bw·β_{1}·c,max / (φs·fy)",
+         f"c,max = 700×0.8×{d:.0f} / (700+{fy})  =  {c_max_val:.1f} mm",
          f"As,max = {r['As_max']:.0f} mm^{{2}}",
          passed=c["As_max"],
          note=f"As = {As:.0f} mm^{{2}}  {'≤' if c['As_max'] else '>'}  As,max = {r['As_max']:.0f} mm^{{2}}")
