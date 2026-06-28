@@ -215,7 +215,11 @@ class BeamAnalysis:
         As_min = max(0.2*math.sqrt(fc)/fy*bw*d, 1.4/fy*bw*d)
         r["As_min"] = round(As_min,1); c["As_min"] = As >= As_min
 
-        c_max  = 0.0035*d / (0.0035+0.004)
+        # c_max per CSA balanced-condition limit: c_b = 700·d/(700+fy)
+        # (from strain triangle: εcu·Es = 0.0035×200000 = 700, so
+        # c_b = εcu·d/(εcu+εy) = 700·d/(700+fy)). The 0.8 factor limits
+        # the section to 80% of the balanced depth for ductility.
+        c_max  = 700*0.8*d / (700+fy)
         As_max = a1*PHI_C*fc*bw*b1*c_max / (PHI_S*fy)
         if has_comp_steel and fs_prime is not None:
             # Additional tension steel balanced by compression steel doesn't
