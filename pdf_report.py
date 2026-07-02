@@ -772,23 +772,12 @@ def generate_report(r, c, n, params, filepath):
          note=f"As = {As:.0f} mm^{{2}}  {'≥' if c['As_min'] else '<'}  As,min = {r['As_min']:.0f} mm^{{2}}")
 
     c_max_val = 700*0.8*d/(700+fy)
-    Cc_max_val = a1*0.65*fc*bw*b1*c_max_val
-    if r.get("nb_top",0) > 0 and r.get("fs_prime_max") is not None:
-        fs_pm = r["fs_prime_max"]
-        Cs_max_val = r["As_top"]*(0.85*fs_pm - a1*0.65*fc)
-        step("Cl.10.5.2", "Maximum tension steel  As,max  (doubly-reinforced)",
-             "c,max = 700·0.8·d/(700+fy);  As,max = [Cc,max + Cs',max] / (φs·fy)",
-             f"c,max={c_max_val:.1f}mm  Cc,max={Cc_max_val/1e3:.1f}kN  fs'(c_max)={fs_pm:.1f}MPa  Cs'_net={Cs_max_val/1e3:.1f}kN",
-             f"As,max = {r['As_max']:.0f} mm^{{2}}",
-             passed=c["As_max"],
-             note=f"As = {As:.0f} mm^{{2}}  {'≤' if c['As_max'] else '>'}  As,max = {r['As_max']:.0f} mm^{{2}}")
-    else:
-        step("Cl.10.5.2", "Maximum tension steel  As,max",
-             "c,max = 700·0.8·d / (700 + fy);  As,max = α_{1}·φc·f'c·bw·β_{1}·c,max / (φs·fy)",
-             f"c,max = 700×0.8×{d:.0f} / (700+{fy})  =  {c_max_val:.1f} mm",
-             f"As,max = {r['As_max']:.0f} mm^{{2}}",
-             passed=c["As_max"],
-             note=f"As = {As:.0f} mm^{{2}}  {'≤' if c['As_max'] else '>'}  As,max = {r['As_max']:.0f} mm^{{2}}")
+    step("Cl.10.5.2", "Maximum tension steel  As,max",
+         "c,max = 700·0.8·d / (700 + fy);  As,max = α_{1}·φc·f'c·bw·β_{1}·c,max / (φs·fy)",
+         f"c,max = 700×0.8×{d:.0f} / (700+{fy})  =  {c_max_val:.1f} mm",
+         f"As,max = {r['As_max']:.0f} mm^{{2}}",
+         passed=c["As_max"],
+         note=f"As = {As:.0f} mm^{{2}}  {'≤' if c['As_max'] else '>'}  As,max = {r['As_max']:.0f} mm^{{2}}")
 
     # ── SECTION 4: SHEAR ──────────────────────────────────────────────────
     section_title("4", "Shear Design  (Cl. 11.3  —  Simplified Method, θ = 35°)")
