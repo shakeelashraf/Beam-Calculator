@@ -216,15 +216,25 @@ class BeamAnalysis:
         r["As_min"] = round(As_min,1); c["As_min"] = As >= As_min
 
         # c_max per CSA balanced-condition limit: c_b = 700·d/(700+fy)
-        # (from strain triangle: εcu·Es = 0.0035×200000 = 700, so
-        # c_b = εcu·d/(εcu+εy) = 700·d/(700+fy)). The 0.8 factor limits
-        # the section to 80% of the balanced depth for ductility.
+        # The 0.8 factor limits section to 80% of balanced depth for ductility.
         c_max  = 700*0.8*d / (700+fy)
-        As_max = a1*PHI_C*fc*bw*b1*c_max / (PHI_S*fy)
-        if has_comp_steel and fs_prime is not None:
-            # Additional tension steel balanced by compression steel doesn't
-            # reduce ductility — add its contribution (Cl. 10.5.2 commentary)
-            As_max += As_top * (fs_prime/fy)
+
+        # As_max with compression steel — force equilibrium at c = c_max:
+        #   φs·fy·As_max = Cc_max + Cs'_net_max
+        #   Cc_max     = α₁·φc·f'c·bw·β₁·c_max
+        #   Cs'_net_max = As'·(φs·fs'_max − α₁·φc·f'c)
+        #   fs'_max    = min(Es·εcu·(c_max−d')/c_max, fy)   — stress at c_max
+        # Compression steel adds to compression capacity at the ductility limit,
+        # so more tension steel can be provided while keeping c ≤ c_max.
+        Cc_max = a1*PHI_C*fc*bw*b1*c_max
+        if has_comp_steel and As_top > 0:
+            fs_prime_max = min(Es*EPS_CU*(c_max - d_prime)/c_max, fy) if c_max > d_prime else 0
+            fs_prime_max = max(fs_prime_max, 0)
+            Cs_net_max   = As_top*(PHI_S*fs_prime_max - a1*PHI_C*fc)
+            r["fs_prime_max"] = round(fs_prime_max, 1)
+        else:
+            Cs_net_max = 0
+        As_max = (Cc_max + Cs_net_max) / (PHI_S*fy)
         r["As_max"] = round(As_max,1); c["As_max"] = As <= As_max
 
         Mf_kNm=Mf/1e6; Mr_kNm=Mr/1e6
